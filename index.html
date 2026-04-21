@@ -445,7 +445,7 @@
   <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
   <script>
     const { createApp } = Vue;
- 
+
     // ─────────────────────────────────────────────────────────────────
     // 👇 REPLACE with your GitHub username and repo name
     //    e.g. 'notskrib/modern-client-builds'
@@ -482,8 +482,35 @@
             ? '/wasm/index.html'
             : '/js/index.html';
 
-          // Cache-bust so jsDelivr always returns the latest version
           const url = `${CDN_BASE}${path}?t=${Date.now()}`;
+
+          // Open the tab IMMEDIATELY on click — before any async work.
+          // Browsers block window.open() called inside .then() because it's
+          // no longer considered a direct user gesture at that point.
+          const newWin = window.open('about:blank', '_blank');
+          if (!newWin) {
+            alert('Popup blocked — please allow popups for this site and try again.');
+            return;
+          }
+
+          // Show a loading screen in the new tab while we fetch
+          newWin.document.write(`
+            <!doctype html><html><head>
+            <meta charset="UTF-8"/>
+            <title>Loading Modern Client...</title>
+            <style>
+              body { margin:0; background:#0f131c; display:flex; align-items:center;
+                     justify-content:center; height:100vh; flex-direction:column; gap:16px; }
+              p { color:#e1b741; font-family:monospace; font-size:14px; }
+              .spinner { width:36px; height:36px; border:3px solid #2f3647;
+                         border-top-color:#e1b741; border-radius:50%;
+                         animation:spin 0.8s linear infinite; }
+              @keyframes spin { to { transform:rotate(360deg); } }
+            </style></head><body>
+            <div class="spinner"></div>
+            <p>Loading Modern Client...</p>
+            </body></html>
+          `);
 
           this.launching = true;
 
@@ -493,20 +520,22 @@
               return r.text();
             })
             .then(html => {
-              // Open a blank tab and write the fetched HTML into it —
-              // same technique used for running single-file apps via jsDelivr
-              const newWin = window.open('about:blank', '_blank');
-              if (newWin) {
-                newWin.document.open();
-                newWin.document.write(html);
-                newWin.document.close();
-              } else {
-                alert('Popup blocked — please allow popups for this site and try again.');
-              }
+              // Use a Blob URL — most reliable way to load full HTML into a new tab
+              const blob = new Blob([html], { type: 'text/html' });
+              const blobUrl = URL.createObjectURL(blob);
+              newWin.location.href = blobUrl;
+              // Revoke after a delay to free memory (tab has loaded by then)
+              setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
             })
             .catch(err => {
               console.error('Launch failed:', err);
-              alert('Failed to load the build. Check the console for details.');
+              const errHtml = `<!doctype html><html><head><meta charset="UTF-8"/>
+                <title>Error</title>
+                <style>body{margin:0;background:#0f131c;display:flex;align-items:center;
+                justify-content:center;height:100vh;}p{color:#ff6b6b;font-family:monospace;font-size:14px;}</style>
+                </head><body><p>Failed to load build: ${err.message}</p></body></html>`;
+              const blob = new Blob([errHtml], { type: 'text/html' });
+              newWin.location.href = URL.createObjectURL(blob);
             })
             .finally(() => {
               this.launching = false;
@@ -553,4 +582,3 @@
   </script>
 </body>
 </html>
-
